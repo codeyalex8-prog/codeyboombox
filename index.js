@@ -6,6 +6,8 @@ const {
   ActivityType
 } = require('discord.js');
 
+const util = require('node:util');
+
 const { DisTube } = require('distube');
 const { YouTubePlugin } = require('@distube/youtube');
 const { SpotifyPlugin } = require('@distube/spotify');
@@ -18,7 +20,7 @@ const { buildPanel } = require('./panel');
 const TOKEN = process.env.DISCORD_TOKEN;
 
 if (!TOKEN) {
-  throw new Error('DISCORD_TOKEN is missing from environment variables.');
+  throw new Error('DISCORD_TOKEN is missing from Railway Variables.');
 }
 
 const client = new Client({
@@ -40,6 +42,8 @@ const distube = new DisTube(client, {
     new YtDlpPlugin({ update: true })
   ]
 });
+
+// SLASH COMMANDS
 
 const commands = [
   {
@@ -70,6 +74,8 @@ const commands = [
   { name: 'panel', description: 'Show the music player' }
 ];
 
+// BOT READY
+
 client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
@@ -77,7 +83,7 @@ client.once('clientReady', async () => {
     await client.application.commands.set(commands);
     console.log('Registered 8 commands');
   } catch (error) {
-    console.error('Command registration error:', error);
+    console.error('COMMAND REGISTRATION ERROR:', error);
   }
 
   client.user.setActivity('music', {
@@ -87,29 +93,55 @@ client.once('clientReady', async () => {
   console.log('Music bot online');
 });
 
-distube.on('playSong', (queue, song) => {
-  console.log('PLAYING:', song.name);
-});
+// MUSIC EVENTS
 
 distube.on('addSong', (queue, song) => {
   console.log('ADDED:', song.name);
+});
+
+distube.on('playSong', (queue, song) => {
+  console.log('PLAYING:', song.name);
 });
 
 distube.on('finish', queue => {
   console.log('QUEUE FINISHED:', queue.id);
 });
 
-distube.on('error', (channel, error) => {
-  console.error('DISTUBE ERROR:', error);
-});
-
-distube.on('disconnect', queue => {
-  console.log('DISCONNECTED:', queue.id);
-});
-
 distube.on('deleteQueue', queue => {
   console.log('QUEUE DELETED:', queue.id);
 });
+
+distube.on('disconnect', queue => {
+  console.log('VOICE DISCONNECTED:', queue.id);
+});
+
+// CORRECT ERROR HANDLER
+
+distube.on('error', (error, queue, song) => {
+  console.error('\n========== MUSIC PLAYBACK ERROR ==========');
+
+  console.error('Message:', error?.message || 'No message');
+  console.error('Code:', error?.errorCode || error?.code || 'Unknown');
+  console.error('Song:', song?.name || 'Unknown');
+  console.error('Guild:', queue?.id || 'Unknown');
+
+  console.error(
+    'Full error:',
+    util.inspect(error, {
+      depth: 6,
+      colors: false
+    })
+  );
+
+  if (error?.cause) {
+    console.error('Original cause:', error.cause);
+  }
+
+  console.error('Stack:', error?.stack || 'No stack available');
+  console.error('===========================================\n');
+});
+
+// INTERACTIONS
 
 client.on('interactionCreate', async interaction => {
   try {
@@ -140,13 +172,16 @@ client.on('interactionCreate', async interaction => {
             textChannel: interaction.channel
           });
 
-          await interaction.editReply('Your request has been added.');
+          await interaction.editReply(
+            'Your request has been added.'
+          );
+
         } catch (error) {
-          console.error('PLAY ERROR:', error);
+          console.error('\nPLAY COMMAND ERROR:', error);
 
           await interaction.editReply(
-            `Couldn't play that song: ${error.message}`
-          );
+            `Couldn't play that song: ${error.message || 'Unknown error'}`
+          ).catch(() => {});
         }
 
         return;
@@ -192,7 +227,10 @@ client.on('interactionCreate', async interaction => {
         }
 
         queue.setVolume(amount);
-        return interaction.reply(`Volume set to ${amount}%.`);
+
+        return interaction.reply(
+          `Volume set to ${amount}%.`
+        );
       }
 
       if (command === 'queue') {
@@ -207,12 +245,23 @@ client.on('interactionCreate', async interaction => {
       }
 
       if (command === 'panel') {
+        const currentQueue = distube.getQueue(interaction.guildId);
+
+        if (!currentQueue) {
+          return interaction.reply({
+            content: 'Play a song first to open the player.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+
         return interaction.reply({
-          components: [buildPanel(queue)],
+          components: [buildPanel(currentQueue)],
           flags: MessageFlags.IsComponentsV2
         });
       }
     }
+
+    // PLAYER BUTTONS
 
     if (interaction.isButton()) {
       const queue = distube.getQueue(interaction.guildId);
@@ -246,7 +295,9 @@ client.on('interactionCreate', async interaction => {
           break;
 
         case 'music_loop':
-          queue.setRepeatMode(queue.repeatMode === 0 ? 1 : 0);
+          queue.setRepeatMode(
+            queue.repeatMode === 0 ? 1 : 0
+          );
           break;
 
         default:
@@ -255,6 +306,7 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.deferUpdate();
     }
+
   } catch (error) {
     console.error('INTERACTION ERROR:', error);
 
@@ -267,8 +319,16 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// GLOBAL ERROR LOGGING
+
 process.on('unhandledRejection', error => {
   console.error('UNHANDLED REJECTION:', error);
 });
+
+process.on('uncaughtException', error => {
+  console.error('UNCAUGHT EXCEPTION:', error);
+});
+
+// LOGIN
 
 client.login(TOKEN);
