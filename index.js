@@ -9,10 +9,7 @@ const {
 const util = require('node:util');
 
 const { DisTube } = require('distube');
-const { YouTubePlugin } = require('@distube/youtube');
-const { SpotifyPlugin } = require('@distube/spotify');
 const { SoundCloudPlugin } = require('@distube/soundcloud');
-const { YtDlpPlugin } = require('@distube/yt-dlp');
 
 const ffmpegPath = require('ffmpeg-static');
 const { buildPanel } = require('./panel');
@@ -37,15 +34,14 @@ const client = new Client({
   ]
 });
 
+// SOUNDCLOUD ONLY — NO YOUTUBE PLAYBACK
+
 const distube = new DisTube(client, {
   ffmpeg: {
     path: ffmpegPath
   },
   plugins: [
-    new YouTubePlugin(),
-    new SpotifyPlugin(),
-    new SoundCloudPlugin(),
-    new YtDlpPlugin({ update: true })
+    new SoundCloudPlugin()
   ]
 });
 
@@ -54,10 +50,10 @@ const distube = new DisTube(client, {
 const commands = [
   {
     name: 'play',
-    description: 'Play a song',
+    description: 'Play a song from SoundCloud',
     options: [{
       name: 'song',
-      description: 'Song name or URL',
+      description: 'SoundCloud song name or URL',
       type: 3,
       required: true
     }]
@@ -126,39 +122,24 @@ distube.on('disconnect', queue => {
   console.log('[VOICE] DISCONNECTED:', queue.id);
 });
 
-// ACTUAL DISTUBE ERROR
+// ERROR HANDLING
 
 distube.on('error', (error, queue, song) => {
   console.error('\n========== DISTUBE ERROR ==========');
   console.error('Message:', error?.message);
-  console.error('Code:', error?.errorCode || error?.code);
-  console.error('Source:', error?.source);
   console.error('Song:', song?.name);
   console.error('Guild:', queue?.id);
-
-  console.error(
-    'Cause:',
-    util.inspect(error?.cause, {
-      depth: 5,
-      colors: false
-    })
-  );
-
-  console.error(
-    'Stack:',
-    error?.stack
-  );
-
+  console.error('Cause:', util.inspect(error?.cause, {
+    depth: 4,
+    colors: false
+  }));
+  console.error('Stack:', error?.stack);
   console.error('===================================\n');
 });
-
-// FFMPEG OUTPUT
 
 distube.on('ffmpegDebug', debug => {
   console.log('[FFMPEG]', debug);
 });
-
-// DISTUBE DEBUG
 
 distube.on('debug', debug => {
   console.log('[DISTUBE DEBUG]', debug);
@@ -168,6 +149,8 @@ distube.on('debug', debug => {
 
 client.on('interactionCreate', async interaction => {
   try {
+    // SLASH COMMANDS
+
     if (interaction.isChatInputCommand()) {
       const command = interaction.commandName;
 
@@ -175,11 +158,6 @@ client.on('interactionCreate', async interaction => {
 
       if (command === 'play') {
         const query = interaction.options.getString('song');
-
-        console.log('\n========== PLAY REQUEST ==========');
-        console.log('Query:', query);
-        console.log('Guild:', interaction.guildId);
-
         const voiceChannel = interaction.member.voice.channel;
 
         if (!voiceChannel) {
@@ -194,32 +172,30 @@ client.on('interactionCreate', async interaction => {
         });
 
         try {
-          console.log('Joining voice channel:', voiceChannel.name);
+          console.log('\n========== PLAY REQUEST ==========');
+          console.log('Query:', query);
+          console.log('Guild:', interaction.guildId);
+          console.log('Voice channel:', voiceChannel.name);
 
           await distube.play(voiceChannel, query, {
             member: interaction.member,
             textChannel: interaction.channel
           });
 
-          console.log('PLAY REQUEST ACCEPTED');
-
           await interaction.editReply(
-            'Song added to the queue. Starting playback...'
+            'SoundCloud request received. Checking the track...'
           );
 
         } catch (error) {
-          console.error('PLAY COMMAND FAILED:', error);
+          console.error('[PLAY COMMAND ERROR]', error);
 
           await interaction.editReply(
             `Playback request failed: ${error.message || 'Unknown error'}`
           ).catch(() => {});
         }
 
-        console.log('==================================\n');
         return;
       }
-
-      // OTHER COMMANDS
 
       const queue = distube.getQueue(interaction.guildId);
 
@@ -261,7 +237,6 @@ client.on('interactionCreate', async interaction => {
         }
 
         queue.setVolume(amount);
-
         return interaction.reply(`Volume set to ${amount}%.`);
       }
 
@@ -293,9 +268,10 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // PLAYER BUTTONS
+    // COMPONENTS V2 PLAYER BUTTONS
+    // These IDs now match panel.js: mp:pause, mp:skip, etc.
 
-    if (interaction.isButton()) {
+    if (interaction.isButton() && interaction.customId.startsWith('mp:')) {
       const queue = distube.getQueue(interaction.guildId);
 
       if (!queue) {
@@ -305,38 +281,69 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      switch (interaction.customId) {
-        case 'music_pause':
-          queue.pause();
+      const action = interaction.customId;
+
+      switch (action) {
+        case 'mp:pause':
+          if (queue.paused) {
+            queue.resume();
+          } else {
+            queue.pause();
+          }
           break;
 
-        case 'music_resume':
-          queue.resume();
-          break;
-
-        case 'music_skip':
+        case 'mp:skip':
           await queue.skip();
           break;
 
-        case 'music_stop':
+        case 'mp:stop':
           queue.stop();
+          await interaction.deferUpdate();
+          return;
+
+        case 'mp:loop':
+          queue.setRepeatMode((queue.repeatMode + 1) % 3);
           break;
 
-        case 'music_shuffle':
+        case 'mp:voldown':
+          queue.setVolume(Math.max(0, queue.volume - 10));
+          break;
+
+        case 'mp:volup':
+          queue.setVolume(Math.min(200, queue.volume + 10));
+          break;
+
+        case 'mp:shuffle':
           queue.shuffle();
           break;
 
-        case 'music_loop':
-          queue.setRepeatMode(
-            queue.repeatMode === 0 ? 1 : 0
-          );
-          break;
+        case 'mp:queue': {
+          const songs = queue.songs
+            .map((song, index) => `${index + 1}. ${song.name}`)
+            .join('\n');
+
+          return interaction.reply({
+            content: songs.slice(0, 1900) || 'Queue is empty.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
 
         default:
           return;
       }
 
       await interaction.deferUpdate();
+
+      // Refresh the player panel after button actions
+      const updatedQueue = distube.getQueue(interaction.guildId);
+
+      if (updatedQueue) {
+        await interaction.message.edit({
+          components: [buildPanel(updatedQueue)]
+        }).catch(error => {
+          console.error('[PANEL REFRESH ERROR]', error.message);
+        });
+      }
     }
 
   } catch (error) {
