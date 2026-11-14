@@ -7,22 +7,30 @@ const {
 } = require('discord.js');
 
 const util = require('node:util');
+
 const { DisTube } = require('distube');
 const { SoundCloudPlugin } = require('@distube/soundcloud');
+
 const ffmpegPath = require('ffmpeg-static');
 const { buildPanel } = require('./panel');
 
 const TOKEN = process.env.DISCORD_TOKEN;
+
+// CHECK CONFIGURATION
 
 if (!TOKEN) {
   throw new Error('DISCORD_TOKEN is missing from Railway Variables.');
 }
 
 if (!ffmpegPath) {
-  throw new Error('FFmpeg binary could not be found. Check ffmpeg-static installation.');
+  throw new Error(
+    'FFmpeg binary could not be found. Check ffmpeg-static installation.'
+  );
 }
 
 console.log('FFmpeg executable:', ffmpegPath);
+
+// DISCORD CLIENT
 
 const client = new Client({
   intents: [
@@ -36,6 +44,11 @@ const client = new Client({
 
 const distube = new DisTube(client, {
   emitNewSongOnly: true,
+
+  ffmpeg: {
+    path: ffmpegPath
+  },
+
   plugins: [
     new SoundCloudPlugin()
   ]
@@ -125,10 +138,15 @@ distube.on('error', (error, queue, song) => {
   console.error('Message:', error?.message);
   console.error('Song:', song?.name);
   console.error('Guild:', queue?.id);
-  console.error('Cause:', util.inspect(error?.cause, {
-    depth: 4,
-    colors: false
-  }));
+
+  console.error(
+    'Cause:',
+    util.inspect(error?.cause, {
+      depth: 4,
+      colors: false
+    })
+  );
+
   console.error('Stack:', error?.stack);
   console.error('===================================\n');
 });
@@ -197,25 +215,35 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
+      // PAUSE
+
       if (command === 'pause') {
         queue.pause();
         return interaction.reply('Playback paused.');
       }
+
+      // RESUME
 
       if (command === 'resume') {
         queue.resume();
         return interaction.reply('Playback resumed.');
       }
 
+      // SKIP
+
       if (command === 'skip') {
         await queue.skip();
         return interaction.reply('Skipped.');
       }
 
+      // STOP
+
       if (command === 'stop') {
         queue.stop();
         return interaction.reply('Playback stopped.');
       }
+
+      // VOLUME
 
       if (command === 'volume') {
         const amount = interaction.options.getInteger('amount');
@@ -231,6 +259,8 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply(`Volume set to ${amount}%.`);
       }
 
+      // QUEUE
+
       if (command === 'queue') {
         const songs = queue.songs
           .map((song, index) => `${index + 1}. ${song.name}`)
@@ -241,6 +271,8 @@ client.on('interactionCreate', async interaction => {
           flags: MessageFlags.Ephemeral
         });
       }
+
+      // PLAYER PANEL
 
       if (command === 'panel') {
         const currentQueue = distube.getQueue(interaction.guildId);
@@ -261,7 +293,10 @@ client.on('interactionCreate', async interaction => {
 
     // PLAYER BUTTONS
 
-    if (interaction.isButton() && interaction.customId.startsWith('mp:')) {
+    if (
+      interaction.isButton() &&
+      interaction.customId.startsWith('mp:')
+    ) {
       const queue = distube.getQueue(interaction.guildId);
 
       if (!queue) {
