@@ -1,6 +1,4 @@
 
-require('dotenv').config();
-
 const {
   Client,
   GatewayIntentBits,
@@ -16,12 +14,10 @@ const { YtDlpPlugin } = require('@distube/yt-dlp');
 const ffmpegPath = require('ffmpeg-static');
 const { buildPanel, MAX_VOLUME } = require('./panel');
 
-const config = {
-  token: process.env.DISCORD_TOKEN,
-};
+const TOKEN = process.env.DISCORD_TOKEN;
 
-if (!config.token) {
-  console.error('❌ Missing DISCORD_TOKEN environment variable.');
+if (!TOKEN) {
+  console.error('❌ Missing DISCORD_TOKEN in Railway Variables.');
   process.exit(1);
 }
 
@@ -378,4 +374,4 @@ process.on('unhandledRejection', error => {
   console.error('Unhandled rejection:', error);
 });
 
-client.login(config.token);
+client.login(TOKEN);
