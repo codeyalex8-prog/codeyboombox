@@ -7,24 +7,18 @@ const {
 } = require('discord.js');
 
 const util = require('node:util');
-
 const { DisTube } = require('distube');
 const { SoundCloudPlugin } = require('@distube/soundcloud');
-
-const ffmpegPath = require('ffmpeg-static');
 const { buildPanel } = require('./panel');
 
 const TOKEN = process.env.DISCORD_TOKEN;
+const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
 if (!TOKEN) {
   throw new Error('DISCORD_TOKEN is missing from Railway Variables.');
 }
 
-if (!ffmpegPath) {
-  throw new Error('FFmpeg binary was not found.');
-}
-
-console.log('FFmpeg path:', ffmpegPath);
+console.log('FFmpeg executable:', ffmpegPath);
 
 const client = new Client({
   intents: [
@@ -34,7 +28,7 @@ const client = new Client({
   ]
 });
 
-// SOUNDCLOUD ONLY — NO YOUTUBE PLAYBACK
+// SOUNDCLOUD MUSIC BOT
 
 const distube = new DisTube(client, {
   ffmpeg: {
@@ -85,7 +79,7 @@ client.once('clientReady', async () => {
     await client.application.commands.set(commands);
     console.log('Registered 8 commands');
   } catch (error) {
-    console.error('COMMAND REGISTRATION ERROR:', error);
+    console.error('[COMMAND REGISTRATION ERROR]', error);
   }
 
   client.user.setActivity('music', {
@@ -149,8 +143,6 @@ distube.on('debug', debug => {
 
 client.on('interactionCreate', async interaction => {
   try {
-    // SLASH COMMANDS
-
     if (interaction.isChatInputCommand()) {
       const command = interaction.commandName;
 
@@ -185,7 +177,6 @@ client.on('interactionCreate', async interaction => {
           await interaction.editReply(
             'SoundCloud request received. Checking the track...'
           );
-
         } catch (error) {
           console.error('[PLAY COMMAND ERROR]', error);
 
@@ -268,8 +259,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // COMPONENTS V2 PLAYER BUTTONS
-    // These IDs now match panel.js: mp:pause, mp:skip, etc.
+    // PLAYER BUTTONS
 
     if (interaction.isButton() && interaction.customId.startsWith('mp:')) {
       const queue = distube.getQueue(interaction.guildId);
@@ -281,9 +271,7 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      const action = interaction.customId;
-
-      switch (action) {
+      switch (interaction.customId) {
         case 'mp:pause':
           if (queue.paused) {
             queue.resume();
@@ -297,8 +285,8 @@ client.on('interactionCreate', async interaction => {
           break;
 
         case 'mp:stop':
-          queue.stop();
           await interaction.deferUpdate();
+          queue.stop();
           return;
 
         case 'mp:loop':
@@ -334,7 +322,6 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.deferUpdate();
 
-      // Refresh the player panel after button actions
       const updatedQueue = distube.getQueue(interaction.guildId);
 
       if (updatedQueue) {
