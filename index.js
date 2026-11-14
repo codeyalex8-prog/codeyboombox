@@ -1,4 +1,6 @@
 
+require('dotenv').config();
+
 const {
   Client,
   GatewayIntentBits,
@@ -13,15 +15,18 @@ const { YtDlpPlugin } = require('@distube/yt-dlp');
 
 const ffmpegPath = require('ffmpeg-static');
 const { buildPanel, MAX_VOLUME } = require('./panel');
-const config = require('./config.json');
+
+const config = {
+  token: process.env.DISCORD_TOKEN,
+};
 
 if (!config.token) {
-  console.error('Missing bot token in config.json');
+  console.error('❌ Missing DISCORD_TOKEN environment variable.');
   process.exit(1);
 }
 
 if (!ffmpegPath) {
-  console.error('FFmpeg binary was not found. Run: npm install ffmpeg-static');
+  console.error('❌ FFmpeg binary was not found.');
   process.exit(1);
 }
 
@@ -34,7 +39,6 @@ const client = new Client({
   ],
 });
 
-// DisTube with FFmpeg configured
 const distube = new DisTube(client, {
   ffmpeg: {
     path: ffmpegPath,
@@ -46,7 +50,6 @@ const distube = new DisTube(client, {
   ],
 });
 
-// Slash commands
 const commands = [
   {
     name: 'play',
@@ -129,7 +132,6 @@ function clearPanel(guildId) {
   panels.delete(guildId);
 }
 
-// Music events
 distube
   .on('playSong', queue => sendPanel(queue))
   .on('addSong', (queue, song) => {
@@ -186,7 +188,6 @@ function queueText(queue) {
       : '');
 }
 
-// Interactions
 client.on('interactionCreate', async interaction => {
   try {
     if (!interaction.inGuild()) return;
@@ -278,7 +279,6 @@ client.on('interactionCreate', async interaction => {
 
         case 'volume': {
           const volume = interaction.options.getInteger('percent', true);
-
           queue.setVolume(volume);
 
           await interaction.reply(
@@ -293,7 +293,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // Player buttons
     if (
       interaction.isButton() &&
       interaction.customId.startsWith('mp:')
@@ -359,7 +358,6 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Bot ready
 client.once('clientReady', async () => {
   try {
     await client.application.commands.set(commands);
@@ -376,7 +374,6 @@ client.once('clientReady', async () => {
   }
 });
 
-// Error handling
 process.on('unhandledRejection', error => {
   console.error('Unhandled rejection:', error);
 });
