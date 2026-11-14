@@ -9,13 +9,17 @@ const {
 const util = require('node:util');
 const { DisTube } = require('distube');
 const { SoundCloudPlugin } = require('@distube/soundcloud');
+const ffmpegPath = require('ffmpeg-static');
 const { buildPanel } = require('./panel');
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
 if (!TOKEN) {
   throw new Error('DISCORD_TOKEN is missing from Railway Variables.');
+}
+
+if (!ffmpegPath) {
+  throw new Error('FFmpeg binary could not be found. Check ffmpeg-static installation.');
 }
 
 console.log('FFmpeg executable:', ffmpegPath);
@@ -28,12 +32,10 @@ const client = new Client({
   ]
 });
 
-// SOUNDCLOUD MUSIC BOT
+// DISTUBE CONFIGURATION
 
 const distube = new DisTube(client, {
-  ffmpeg: {
-    path: ffmpegPath
-  },
+  emitNewSongOnly: true,
   plugins: [
     new SoundCloudPlugin()
   ]
@@ -131,10 +133,6 @@ distube.on('error', (error, queue, song) => {
   console.error('===================================\n');
 });
 
-distube.on('ffmpegDebug', debug => {
-  console.log('[FFMPEG]', debug);
-});
-
 distube.on('debug', debug => {
   console.log('[DISTUBE DEBUG]', debug);
 });
@@ -168,6 +166,7 @@ client.on('interactionCreate', async interaction => {
           console.log('Query:', query);
           console.log('Guild:', interaction.guildId);
           console.log('Voice channel:', voiceChannel.name);
+          console.log('FFmpeg:', ffmpegPath);
 
           await distube.play(voiceChannel, query, {
             member: interaction.member,
@@ -177,6 +176,7 @@ client.on('interactionCreate', async interaction => {
           await interaction.editReply(
             'SoundCloud request received. Checking the track...'
           );
+
         } catch (error) {
           console.error('[PLAY COMMAND ERROR]', error);
 
