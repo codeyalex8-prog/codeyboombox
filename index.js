@@ -23,6 +23,12 @@ if (!TOKEN) {
   throw new Error('DISCORD_TOKEN is missing from Railway Variables.');
 }
 
+if (!ffmpegPath) {
+  throw new Error('FFmpeg binary was not found.');
+}
+
+console.log('FFmpeg path:', ffmpegPath);
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -74,7 +80,7 @@ const commands = [
   { name: 'panel', description: 'Show the music player' }
 ];
 
-// BOT READY
+// STARTUP
 
 client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -96,49 +102,66 @@ client.once('clientReady', async () => {
 // MUSIC EVENTS
 
 distube.on('addSong', (queue, song) => {
-  console.log('ADDED:', song.name);
+  console.log('[MUSIC] ADDED:', song.name);
 });
 
 distube.on('playSong', (queue, song) => {
-  console.log('PLAYING:', song.name);
+  console.log('[MUSIC] PLAYING:', song.name);
+  console.log('[MUSIC] URL:', song.url);
+});
+
+distube.on('finishSong', (queue, song) => {
+  console.log('[MUSIC] SONG FINISHED:', song.name);
 });
 
 distube.on('finish', queue => {
-  console.log('QUEUE FINISHED:', queue.id);
+  console.log('[MUSIC] QUEUE FINISHED:', queue.id);
 });
 
 distube.on('deleteQueue', queue => {
-  console.log('QUEUE DELETED:', queue.id);
+  console.log('[MUSIC] QUEUE DELETED:', queue.id);
 });
 
 distube.on('disconnect', queue => {
-  console.log('VOICE DISCONNECTED:', queue.id);
+  console.log('[VOICE] DISCONNECTED:', queue.id);
 });
 
-// CORRECT ERROR HANDLER
+// ACTUAL DISTUBE ERROR
 
 distube.on('error', (error, queue, song) => {
-  console.error('\n========== MUSIC PLAYBACK ERROR ==========');
-
-  console.error('Message:', error?.message || 'No message');
-  console.error('Code:', error?.errorCode || error?.code || 'Unknown');
-  console.error('Song:', song?.name || 'Unknown');
-  console.error('Guild:', queue?.id || 'Unknown');
+  console.error('\n========== DISTUBE ERROR ==========');
+  console.error('Message:', error?.message);
+  console.error('Code:', error?.errorCode || error?.code);
+  console.error('Source:', error?.source);
+  console.error('Song:', song?.name);
+  console.error('Guild:', queue?.id);
 
   console.error(
-    'Full error:',
-    util.inspect(error, {
-      depth: 6,
+    'Cause:',
+    util.inspect(error?.cause, {
+      depth: 5,
       colors: false
     })
   );
 
-  if (error?.cause) {
-    console.error('Original cause:', error.cause);
-  }
+  console.error(
+    'Stack:',
+    error?.stack
+  );
 
-  console.error('Stack:', error?.stack || 'No stack available');
-  console.error('===========================================\n');
+  console.error('===================================\n');
+});
+
+// FFMPEG OUTPUT
+
+distube.on('ffmpegDebug', debug => {
+  console.log('[FFMPEG]', debug);
+});
+
+// DISTUBE DEBUG
+
+distube.on('debug', debug => {
+  console.log('[DISTUBE DEBUG]', debug);
 });
 
 // INTERACTIONS
@@ -148,10 +171,14 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
       const command = interaction.commandName;
 
+      // PLAY
+
       if (command === 'play') {
         const query = interaction.options.getString('song');
 
-        console.log('PLAY REQUEST:', query);
+        console.log('\n========== PLAY REQUEST ==========');
+        console.log('Query:', query);
+        console.log('Guild:', interaction.guildId);
 
         const voiceChannel = interaction.member.voice.channel;
 
@@ -167,25 +194,32 @@ client.on('interactionCreate', async interaction => {
         });
 
         try {
+          console.log('Joining voice channel:', voiceChannel.name);
+
           await distube.play(voiceChannel, query, {
             member: interaction.member,
             textChannel: interaction.channel
           });
 
+          console.log('PLAY REQUEST ACCEPTED');
+
           await interaction.editReply(
-            'Your request has been added.'
+            'Song added to the queue. Starting playback...'
           );
 
         } catch (error) {
-          console.error('\nPLAY COMMAND ERROR:', error);
+          console.error('PLAY COMMAND FAILED:', error);
 
           await interaction.editReply(
-            `Couldn't play that song: ${error.message || 'Unknown error'}`
+            `Playback request failed: ${error.message || 'Unknown error'}`
           ).catch(() => {});
         }
 
+        console.log('==================================\n');
         return;
       }
+
+      // OTHER COMMANDS
 
       const queue = distube.getQueue(interaction.guildId);
 
@@ -228,9 +262,7 @@ client.on('interactionCreate', async interaction => {
 
         queue.setVolume(amount);
 
-        return interaction.reply(
-          `Volume set to ${amount}%.`
-        );
+        return interaction.reply(`Volume set to ${amount}%.`);
       }
 
       if (command === 'queue') {
@@ -308,7 +340,7 @@ client.on('interactionCreate', async interaction => {
     }
 
   } catch (error) {
-    console.error('INTERACTION ERROR:', error);
+    console.error('[INTERACTION ERROR]', error);
 
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({
@@ -319,14 +351,14 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// GLOBAL ERROR LOGGING
+// GLOBAL ERRORS
 
 process.on('unhandledRejection', error => {
-  console.error('UNHANDLED REJECTION:', error);
+  console.error('[UNHANDLED REJECTION]', error);
 });
 
 process.on('uncaughtException', error => {
-  console.error('UNCAUGHT EXCEPTION:', error);
+  console.error('[UNCAUGHT EXCEPTION]', error);
 });
 
 // LOGIN
