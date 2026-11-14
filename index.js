@@ -17,16 +17,14 @@ const { buildPanel, MAX_VOLUME } = require('./panel');
 const TOKEN = process.env.DISCORD_TOKEN;
 
 if (!TOKEN) {
-  console.error('❌ Missing DISCORD_TOKEN in Railway Variables.');
+  console.error('Missing DISCORD_TOKEN Railway variable.');
   process.exit(1);
 }
 
 if (!ffmpegPath) {
-  console.error('❌ FFmpeg binary was not found.');
+  console.error('FFmpeg not found.');
   process.exit(1);
 }
-
-console.log('FFmpeg:', ffmpegPath);
 
 const client = new Client({
   intents: [
@@ -116,7 +114,8 @@ async function refreshPanel(queue) {
       components: [buildPanel(queue)],
       flags: MessageFlags.IsComponentsV2,
     });
-  } catch {
+  } catch (error) {
+    console.error('Panel refresh error:', error);
     panels.delete(queue.id);
   }
 }
@@ -128,25 +127,35 @@ function clearPanel(guildId) {
   panels.delete(guildId);
 }
 
+// Playback diagnostics
 distube
-  .on('playSong', queue => sendPanel(queue))
+  .on('playSong', (queue, song) => {
+    console.log('PLAYING:', song.name);
+    sendPanel(queue);
+  })
   .on('addSong', (queue, song) => {
+    console.log('ADDED:', song.name);
+
     queue.textChannel?.send({
       content: `➕ Added **${song.name}** to the queue.`,
     }).catch(() => {});
   })
   .on('addList', (queue, playlist) => {
+    console.log('PLAYLIST:', playlist.name);
+
     queue.textChannel?.send({
       content: `➕ Added playlist **${playlist.name}**.`,
     }).catch(() => {});
   })
   .on('finish', queue => {
+    console.log('QUEUE FINISHED:', queue.id);
+
     queue.textChannel?.send('✅ Queue finished.').catch(() => {});
   })
   .on('deleteQueue', queue => clearPanel(queue.id))
   .on('disconnect', queue => clearPanel(queue.id))
   .on('error', (error, queue) => {
-    console.error('DisTube error:', error);
+    console.error('DISTUBE ERROR:', error?.stack || error);
 
     queue?.textChannel?.send(
       `❌ Music error: ${String(error.message || error).slice(0, 180)}`
@@ -222,6 +231,8 @@ client.on('interactionCreate', async interaction => {
         }
 
         try {
+          console.log('PLAY REQUEST:', query);
+
           await distube.play(voice, query, {
             member: interaction.member,
             textChannel: interaction.channel,
@@ -229,10 +240,10 @@ client.on('interactionCreate', async interaction => {
 
           await interaction.editReply('✅ Your request has been added.');
         } catch (error) {
-          console.error('Play error:', error);
+          console.error('PLAY ERROR:', error?.stack || error);
 
           await interaction.editReply(
-            `❌ Couldn't play that song: ${String(error.message || error).slice(0, 180)}`
+            `❌ Playback failed: ${String(error.message || error).slice(0, 180)}`
           );
         }
 
@@ -342,7 +353,7 @@ client.on('interactionCreate', async interaction => {
       });
     }
   } catch (error) {
-    console.error('Interaction error:', error);
+    console.error('INTERACTION ERROR:', error?.stack || error);
 
     const response = ephemeral('❌ Something went wrong.');
 
@@ -362,16 +373,16 @@ client.once('clientReady', async () => {
       type: ActivityType.Listening,
     });
 
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    console.log(`✅ Registered ${commands.length} commands`);
-    console.log('🟢 Music bot is online');
+    console.log(`Logged in as ${client.user.tag}`);
+    console.log(`Registered ${commands.length} commands`);
+    console.log('Music bot online');
   } catch (error) {
-    console.error('Startup error:', error);
+    console.error('STARTUP ERROR:', error?.stack || error);
   }
 });
 
 process.on('unhandledRejection', error => {
-  console.error('Unhandled rejection:', error);
+  console.error('UNHANDLED REJECTION:', error?.stack || error);
 });
 
 client.login(TOKEN);
